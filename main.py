@@ -1,57 +1,61 @@
-import os
 import streamlit as st
-from langchain.chat_models import BedrockChat
-from langchain.schema import HumanMessage, SystemMessage
 import boto3
+from langchain.llms import OpenAI
+from langchain.prompts import PromptTemplate
+from langchain.chains import LLMChain
 
-# Streamlit UI
-st.set_page_config(page_title="AI Chatbot (Bedrock)", layout="centered")
-st.title("🤖 AI Chatbot using Amazon Bedrock")
+# --------------------------
+# 1. Load Secrets from Streamlit
+# --------------------------
+aws_access_key = st.secrets["AWS"]["AWS_ACCESS_KEY_ID"]
+aws_secret_key = st.secrets["AWS"]["AWS_SECRET_ACCESS_KEY"]
+aws_region = st.secrets["AWS"]["AWS_REGION"]
 
-# AWS credentials from Streamlit secrets
-aws_access_key = st.secrets["AWS_ACCESS_KEY_ID"]
-aws_secret_key = st.secrets["AWS_SECRET_ACCESS_KEY"]
-aws_region = st.secrets["AWS_REGION"]
+openai_api_key = st.secrets["OPENAI_API_KEY"]
 
-# Initialize Bedrock client
-bedrock_client = boto3.client(
-    service_name="bedrock-runtime",
-    region_name=aws_region,
+# --------------------------
+# 2. Initialize AWS Service (S3 as example)
+# --------------------------
+session = boto3.session.Session(
     aws_access_key_id=aws_access_key,
-    aws_secret_access_key=aws_secret_key
+    aws_secret_access_key=aws_secret_key,
+    region_name=aws_region
 )
+s3 = session.client('s3')
 
-# LangChain Bedrock LLM
-llm = BedrockChat(client=bedrock_client, model="anthropic.claude-v2")  # Change model if needed
+# --------------------------
+# 3. Streamlit UI
+# --------------------------
+st.title("AWS + LangChain Demo App")
+st.write("This app uses **AWS S3** and **LangChain** with OpenAI to generate insights.")
 
-# Conversation memory
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
+# List buckets as a quick AWS test
+try:
+    buckets = s3.list_buckets()
+    st.subheader("✅ Connected to AWS S3")
+    for bucket in buckets['Buckets']:
+        st.write(f"- {bucket['Name']}")
+except Exception as e:
+    st.error(f"Error connecting to AWS: {e}")
 
-# User input
-user_input = st.text_area("Type your message:", placeholder="Ask me anything...")
+# --------------------------
+# 4. LangChain + OpenAI
+# --------------------------
+st.subheader("AI Question Answering with OpenAI & LangChain")
+user_input = st.text_area("Ask a question about AWS or anything:")
 
-if st.button("Send"):
+if st.button("Generate Answer"):
     if user_input.strip():
-        # Append user message
-        st.session_state.chat_history.append({"role": "user", "content": user_input})
-
-        # Prepare messages for LangChain
-        messages = [SystemMessage(content="You are a helpful AI assistant.")]
-        for msg in st.session_state.chat_history:
-            if msg["role"] == "user":
-                messages.append(HumanMessage(content=msg["content"]))
-
-        # Get response
-        response = llm(messages)
-        bot_reply = response.content
-
-        # Append bot response
-        st.session_state.chat_history.append({"role": "assistant", "content": bot_reply})
-
-# Display chat
-for chat in st.session_state.chat_history:
-    if chat["role"] == "user":
-        st.markdown(f"👤 **You:** {chat['content']}")
+        try:
+            llm = OpenAI(openai_api_key=openai_api_key, temperature=0.7)
+            prompt = PromptTemplate(
+                input_variables=["question"],
+                template="You are an expert. Answer this question: {question}"
+            )
+            chain = LLMChain(llm=llm, prompt=prompt)
+            response = chain.run(question=user_input)
+            st.success(response)
+        except Exception as e:
+            st.error(f"Error generating response: {e}")
     else:
-        st.markdown(f"🤖 **AI:** {chat['content']}")
+        st.warning("Please enter a question.")

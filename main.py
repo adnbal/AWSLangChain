@@ -6,7 +6,7 @@ from langchain.prompts import PromptTemplate
 from langchain.llms import OpenAI as LangChainOpenAI
 
 # ==============================
-# ✅ Load Secrets
+# ✅ Load Secrets from Streamlit
 # ==============================
 aws_access_key = st.secrets["AWS"]["AWS_ACCESS_KEY_ID"]
 aws_secret_key = st.secrets["AWS"]["AWS_SECRET_ACCESS_KEY"]
@@ -26,13 +26,12 @@ s3_client = boto3.client(
     region_name=aws_region
 )
 
-bucket_name = "my-langchain-demo-bucket"  # <-- Use your bucket name
+bucket_name = "my-langchain-demo-bucket"  # Change if needed
 
 # ==============================
 # ✅ Streamlit UI
 # ==============================
 st.title("AWS + LangChain + OpenAI Demo")
-
 st.markdown(f"✅ Connected to AWS Region: **{aws_region}**")
 
 # ==============================
@@ -41,42 +40,54 @@ st.markdown(f"✅ Connected to AWS Region: **{aws_region}**")
 uploaded_file = st.file_uploader("Upload a file to AWS S3", type=["txt", "pdf"])
 
 if uploaded_file:
-    file_name = uploaded_file.name
-    try:
-        s3_client.upload_fileobj(uploaded_file, bucket_name, file_name)
-        st.success(f"✅ File '{file_name}' uploaded successfully to S3 bucket '{bucket_name}'.")
-    except Exception as e:
-        st.error(f"Upload failed: {e}")
+    if st.button("Upload to S3"):
+        try:
+            with st.spinner("Uploading to S3..."):
+                uploaded_file.seek(0)  # ✅ Reset file pointer before upload
+                s3_client.upload_fileobj(uploaded_file, bucket_name, uploaded_file.name)
+            st.success(f"✅ File '{uploaded_file.name}' uploaded successfully!")
+        except Exception as e:
+            st.error(f"Upload failed: {e}")
 
 # ==============================
-# ✅ OpenAI Integration Test
+# ✅ Test OpenAI Integration
 # ==============================
 st.subheader("Test OpenAI Integration")
 
 if st.button("Generate Welcome Message"):
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
-        messages=[{"role": "system", "content": "You are a helpful assistant."},
-                  {"role": "user", "content": "Write a short welcome message for an AI app using AWS and LangChain."}]
-    )
-    st.write(response.choices[0].message["content"])
+    with st.spinner("Generating..."):
+        try:
+            response = openai.ChatCompletion.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": "Write a short welcome message for an AI app using AWS and LangChain."}
+                ],
+                timeout=15
+            )
+            st.write(response.choices[0].message["content"])
+        except Exception as e:
+            st.error(f"Error: {e}")
 
 # ==============================
 # ✅ LangChain Q&A Demo
 # ==============================
 st.subheader("LangChain Q&A")
-
-question = st.text_input("Ask a question (demo):")
+question = st.text_input("Ask a question:")
 
 if st.button("Answer"):
     if question:
-        llm = LangChainOpenAI(openai_api_key=openai_api_key, temperature=0.5)
-        prompt = PromptTemplate(
-            input_variables=["question"],
-            template="You are an expert in AI and AWS. Answer the question: {question}"
-        )
-        chain = LLMChain(llm=llm, prompt=prompt)
-        answer = chain.run(question=question)
-        st.success(answer)
+        with st.spinner("Thinking..."):
+            try:
+                llm = LangChainOpenAI(openai_api_key=openai_api_key, temperature=0.5)
+                prompt = PromptTemplate(
+                    input_variables=["question"],
+                    template="You are an expert in AI and AWS. Answer the question: {question}"
+                )
+                chain = LLMChain(llm=llm, prompt=prompt)
+                answer = chain.run(question=question)
+                st.success(answer)
+            except Exception as e:
+                st.error(f"Error: {e}")
     else:
         st.warning("Please enter a question first.")
